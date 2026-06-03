@@ -11,7 +11,9 @@ import { getLakeFSBrowseUrl } from '../utils/LakeFSUtils';
  * same diff lakeFS shows between commits.
  *
  * lakeFS API calls require credentials; they are asked for once and kept in
- * sessionStorage. Requests go through the dev-server /lakefs-api proxy.
+ * localStorage: entered once, reused across tabs and reloads, and cleared
+ * only when lakeFS rejects them (401). Requests go through the dev-server
+ * /lakefs-api proxy.
  */
 
 const CREDS_STORAGE_KEY = 'lakefs.credentials';
@@ -51,7 +53,7 @@ const extractLakeFSCoords = (datasets?: any[]): LakeFSCoords | null => {
 
 const loadStoredCreds = (): { key: string; secret: string } | null => {
   try {
-    const raw = sessionStorage.getItem(CREDS_STORAGE_KEY);
+    const raw = localStorage.getItem(CREDS_STORAGE_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -131,7 +133,7 @@ export const CompareRunLakeFSDiff = ({ runUuids, runNames }: { runUuids: string[
           { headers: authHeaders },
         );
         if (res.status === 401) {
-          sessionStorage.removeItem(CREDS_STORAGE_KEY);
+          localStorage.removeItem(CREDS_STORAGE_KEY);
           setCreds(null);
           throw new Error('lakeFS rejected the credentials — please re-enter them.');
         }
@@ -167,7 +169,7 @@ export const CompareRunLakeFSDiff = ({ runUuids, runNames }: { runUuids: string[
 
   const connect = () => {
     const newCreds = { key: keyInput.trim(), secret: secretInput.trim() };
-    sessionStorage.setItem(CREDS_STORAGE_KEY, JSON.stringify(newCreds));
+    localStorage.setItem(CREDS_STORAGE_KEY, JSON.stringify(newCreds));
     setCreds(newCreds);
     setDiff(null);
   };
