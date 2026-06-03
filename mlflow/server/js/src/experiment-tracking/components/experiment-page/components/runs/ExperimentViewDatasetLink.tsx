@@ -33,7 +33,8 @@ export function ExperimentViewDatasetLink({ datasetWithTags }: DatasetLinkProps)
   if (
     dataset.sourceType === DatasetSourceTypes.HTTP ||
     dataset.sourceType === DatasetSourceTypes.EXTERNAL ||
-    dataset.sourceType === DatasetSourceTypes.HUGGING_FACE
+    dataset.sourceType === DatasetSourceTypes.HUGGING_FACE ||
+    dataset.sourceType === DatasetSourceTypes.LAKEFS
   ) {
     const url = getDatasetSourceUrl(datasetWithTags);
     if (url) {

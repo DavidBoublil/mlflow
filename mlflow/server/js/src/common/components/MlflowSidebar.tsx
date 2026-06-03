@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import {
   Avatar,
   BeakerIcon,
+  BranchIcon,
   Button,
   CloudModelIcon,
   DropdownMenu,
@@ -27,6 +28,7 @@ import { Link, matchPath, useLocation, useNavigate, useParams, useSearchParams }
 import ExperimentTrackingRoutes from '../../experiment-tracking/routes';
 import { ModelRegistryRoutes } from '../../model-registry/routes';
 import GatewayRoutes from '../../gateway/routes';
+import LakeFSRoutes from '../../lakefs/routes';
 import AccountRoutes from '../../account/routes';
 import AdminRoutes from '../../admin/routes';
 import { useCurrentUserIsAdmin, useCurrentUserQuery, useIsBasicAuth } from '../../account/hooks';
@@ -60,6 +62,7 @@ const isExperimentsActive = (location: Location) =>
 const isModelsActive = (location: Location) => Boolean(matchPath('/models/*', location.pathname));
 const isPromptsActive = (location: Location) => Boolean(matchPath('/prompts/*', location.pathname));
 const isGatewayActive = (location: Location) => Boolean(matchPath('/gateway/*', location.pathname));
+const isLakeFSActive = (location: Location) => Boolean(matchPath('/lakefs/*', location.pathname));
 const isSettingsActive = (location: Location) =>
   Boolean(
     matchPath({ path: '/settings', end: true }, location.pathname) ||
@@ -259,6 +262,16 @@ export function MlflowSidebar({
             },
           ]
         : []),
+      {
+        key: 'lakefs',
+        icon: <BranchIcon />,
+        linkProps: {
+          to: LakeFSRoutes.lakeFsPageRoute,
+          isActive: isLakeFSActive,
+          children: <FormattedMessage defaultMessage="lakeFS" description="Sidebar link for lakeFS tab" />,
+        },
+        componentId: 'mlflow.sidebar.lakefs_tab_link',
+      },
     ],
     [
       showNestedExperimentItems,

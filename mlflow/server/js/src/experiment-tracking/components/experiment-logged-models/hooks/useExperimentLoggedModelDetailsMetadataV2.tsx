@@ -1,4 +1,4 @@
-import { GenericSkeleton, useDesignSystemTheme } from '@databricks/design-system';
+import { GenericSkeleton, Typography, useDesignSystemTheme } from '@databricks/design-system';
 import type { LoggedModelProto, RunEntity } from '../../../types';
 import { useIntl } from 'react-intl';
 import { ExperimentLoggedModelTableDateCell } from '../ExperimentLoggedModelTableDateCell';
@@ -12,6 +12,7 @@ import { ExperimentLoggedModelSourceBox } from '../ExperimentLoggedModelSourceBo
 import { ExperimentLoggedModelAllDatasetsList } from '../ExperimentLoggedModelAllDatasetsList';
 import { ExperimentLoggedModelDetailsModelVersionsList } from '../ExperimentLoggedModelDetailsModelVersionsList';
 import { MLFLOW_LOGGED_MODEL_USER_TAG } from '../../../constants';
+import { getLakeFSBrowseUrl } from '../../../utils/LakeFSUtils';
 
 enum ExperimentLoggedModelDetailsMetadataSections {
   DETAILS = 'DETAILS',
@@ -68,6 +69,29 @@ export const useExperimentLoggedModelDetailsMetadataV2 = ({
           />
         }
       />
+      {loggedModel.info?.artifact_uri && (
+        <KeyValueProperty
+          keyValue={intl.formatMessage({
+            defaultMessage: 'Model location',
+            description: 'Label for the artifact location of a logged model on the logged model details page',
+          })}
+          value={
+            getLakeFSBrowseUrl(loggedModel.info.artifact_uri) ? (
+              // lakefs:// artifact locations link out to the lakeFS object browser
+              <Typography.Link
+                componentId="mlflow.logged_models.details_metadata.lakefs_artifact_link"
+                openInNewTab
+                href={getLakeFSBrowseUrl(loggedModel.info.artifact_uri) ?? undefined}
+                css={{ wordBreak: 'break-all' }}
+              >
+                {loggedModel.info.artifact_uri}
+              </Typography.Link>
+            ) : (
+              <DetailsOverviewCopyableIdBox value={loggedModel.info.artifact_uri} />
+            )
+          }
+        />
+      )}
       {loggedModel.info?.source_run_id &&
         loggedModel.info?.experiment_id &&
         (relatedRunsLoading || relatedSourceRun) && (

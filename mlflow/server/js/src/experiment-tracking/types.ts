@@ -335,6 +335,7 @@ export enum DatasetSourceTypes {
   HUGGING_FACE = 'hugging_face',
   UC = 'uc_volume',
   DATABRICKS_UC_TABLE = 'databricks-uc-table',
+  LAKEFS = 'lakefs',
 }
 
 /**

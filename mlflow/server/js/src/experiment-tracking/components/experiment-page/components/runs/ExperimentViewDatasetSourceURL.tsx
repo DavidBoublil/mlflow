@@ -13,6 +13,40 @@ export const ExperimentViewDatasetSourceURL = ({ datasetWithTags }: ExperimentVi
 
   const sourceType = dataset.sourceType;
 
+  if (sourceType === DatasetSourceTypes.LAKEFS) {
+    const url = getDatasetSourceUrl(datasetWithTags);
+    try {
+      // show the canonical lakefs:// URI, but link to the lakeFS web UI
+      const { uri } = JSON.parse(dataset.source);
+      if (uri && url) {
+        return (
+          <div
+            css={{
+              whiteSpace: 'nowrap',
+              display: 'flex',
+              fontSize: theme.typography.fontSizeSm,
+              color: theme.colors.textSecondary,
+              columnGap: theme.spacing.xs,
+            }}
+            title={uri}
+          >
+            URI:{' '}
+            <Typography.Link
+              componentId="mlflow_app_src_experiment-tracking_experimentviewdatasetsourceurl_lakefs"
+              openInNewTab
+              href={url}
+              css={{ display: 'flex', overflow: 'hidden' }}
+            >
+              <span css={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{uri}</span>
+            </Typography.Link>
+          </div>
+        );
+      }
+    } catch {
+      return null;
+    }
+  }
+
   if (
     sourceType === DatasetSourceTypes.HTTP ||
     sourceType === DatasetSourceTypes.EXTERNAL ||
