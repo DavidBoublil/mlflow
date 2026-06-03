@@ -23,6 +23,7 @@ import Utils from '../../common/utils/Utils';
 import ParallelCoordinatesPlotPanel from './ParallelCoordinatesPlotPanel';
 import { PageHeader } from '../../shared/building_blocks/PageHeader';
 import { CollapsibleSection } from '../../common/components/CollapsibleSection';
+import { CompareRunLakeFSDiff } from './CompareRunLakeFSDiff';
 import type { RunInfoEntity } from '../types';
 import { CompareRunArtifactView } from './CompareRunArtifactView';
 import type { ScrollParams } from 'react-virtualized';
@@ -500,6 +501,7 @@ class CompareRunView extends Component<CompareRunViewProps, CompareRunViewState>
             </Tabs.Content>
           </Tabs.Root>
         </CollapsibleSection>
+        <CompareRunLakeFSDiff runUuids={this.props.runUuids} runNames={this.props.runNames} />
         <CollapsibleSection
           title={this.props.intl.formatMessage({
             defaultMessage: 'Run details',

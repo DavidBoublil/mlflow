@@ -52,4 +52,15 @@ module.exports = function (app) {
       changeOrigin: true,
     }),
   );
+  // Forward lakeFS API calls (e.g. the compare-runs dataset diff widget) to the
+  // local lakeFS server, avoiding CORS issues in the browser.
+  // eslint-disable-next-line no-undef
+  const lakefsTarget = process.env.LAKEFS_PROXY || 'http://localhost:8000/';
+  app.use(
+    createProxyMiddleware('/lakefs-api', {
+      target: lakefsTarget,
+      changeOrigin: true,
+      pathRewrite: { '^/lakefs-api': '' },
+    }),
+  );
 };
