@@ -2,6 +2,7 @@ import { Typography, useDesignSystemTheme } from '@databricks/design-system';
 import type { RunDatasetWithTags } from '../../../../types';
 import { DatasetSourceTypes } from '../../../../types';
 import { getDatasetSourceUrl } from '../../../../utils/DatasetUtils';
+import { LakeFSMountButton } from '../../../LakeFSMountButton';
 
 export interface ExperimentViewDatasetSourceProps {
   datasetWithTags: RunDatasetWithTags;
@@ -20,25 +21,32 @@ export const ExperimentViewDatasetSourceURL = ({ datasetWithTags }: ExperimentVi
       const { uri } = JSON.parse(dataset.source);
       if (uri && url) {
         return (
-          <div
-            css={{
-              whiteSpace: 'nowrap',
-              display: 'flex',
-              fontSize: theme.typography.fontSizeSm,
-              color: theme.colors.textSecondary,
-              columnGap: theme.spacing.xs,
-            }}
-            title={uri}
-          >
-            URI:{' '}
-            <Typography.Link
-              componentId="mlflow_app_src_experiment-tracking_experimentviewdatasetsourceurl_lakefs"
-              openInNewTab
-              href={url}
-              css={{ display: 'flex', overflow: 'hidden' }}
+          <div css={{ display: 'flex', flexDirection: 'column', rowGap: theme.spacing.xs }}>
+            <div
+              css={{
+                whiteSpace: 'nowrap',
+                display: 'flex',
+                fontSize: theme.typography.fontSizeSm,
+                color: theme.colors.textSecondary,
+                columnGap: theme.spacing.xs,
+              }}
+              title={uri}
             >
-              <span css={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{uri}</span>
-            </Typography.Link>
+              URI:{' '}
+              <Typography.Link
+                componentId="mlflow_app_src_experiment-tracking_experimentviewdatasetsourceurl_lakefs"
+                openInNewTab
+                href={url}
+                css={{ display: 'flex', overflow: 'hidden' }}
+              >
+                <span css={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{uri}</span>
+              </Typography.Link>
+            </div>
+            <div css={{ fontSize: theme.typography.fontSizeSm, color: theme.colors.textSecondary, fontWeight: 'bold' }}>
+              URI Type: lakeFS
+            </div>
+            {/* mountable only when the lakeFS source is a prefix (directory) */}
+            <LakeFSMountButton uri={uri} />
           </div>
         );
       }

@@ -71,31 +71,43 @@ export const useExperimentLoggedModelDetailsMetadataV2 = ({
         }
       />
       {loggedModel.info?.artifact_uri && (
-        <KeyValueProperty
-          keyValue={intl.formatMessage({
-            defaultMessage: 'Model location',
-            description: 'Label for the artifact location of a logged model on the logged model details page',
-          })}
-          value={
-            getLakeFSBrowseUrl(loggedModel.info.artifact_uri) ? (
-              // lakefs:// artifact locations link out to the lakeFS object browser
-              // and, being a directory, can be mounted with Everest
-              <div css={{ display: 'flex', flexDirection: 'column', gap: theme.spacing.xs, alignItems: 'flex-start' }}>
-                <Typography.Link
-                  componentId="mlflow.logged_models.details_metadata.lakefs_artifact_link"
-                  openInNewTab
-                  href={getLakeFSBrowseUrl(loggedModel.info.artifact_uri) ?? undefined}
-                  css={{ wordBreak: 'break-all' }}
-                >
-                  {loggedModel.info.artifact_uri}
-                </Typography.Link>
-                <LakeFSMountButton uri={loggedModel.info.artifact_uri} />
+        // Stacked layout: the location value sits directly under the "Model location" label.
+        <div
+          css={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: theme.spacing.xs,
+            marginBottom: theme.spacing.xs,
+            lineHeight: theme.typography.lineHeightLg,
+          }}
+        >
+          <div css={{ color: theme.colors.textSecondary }}>
+            {intl.formatMessage({
+              defaultMessage: 'Model location',
+              description: 'Label for the artifact location of a logged model on the logged model details page',
+            })}
+          </div>
+          {getLakeFSBrowseUrl(loggedModel.info.artifact_uri) ? (
+            // lakefs:// artifact locations link out to the lakeFS object browser
+            // and, being a directory, can be mounted with Everest
+            <div css={{ display: 'flex', flexDirection: 'column', gap: theme.spacing.xs, alignItems: 'flex-start' }}>
+              <Typography.Link
+                componentId="mlflow.logged_models.details_metadata.lakefs_artifact_link"
+                openInNewTab
+                href={getLakeFSBrowseUrl(loggedModel.info.artifact_uri) ?? undefined}
+                css={{ wordBreak: 'break-all' }}
+              >
+                {loggedModel.info.artifact_uri}
+              </Typography.Link>
+              <div css={{ fontSize: theme.typography.fontSizeSm, color: theme.colors.textSecondary, fontWeight: 'bold' }}>
+                Location Type: lakeFS
               </div>
-            ) : (
-              <DetailsOverviewCopyableIdBox value={loggedModel.info.artifact_uri} />
-            )
-          }
-        />
+              <LakeFSMountButton uri={loggedModel.info.artifact_uri} subject="model" />
+            </div>
+          ) : (
+            <DetailsOverviewCopyableIdBox value={loggedModel.info.artifact_uri} />
+          )}
+        </div>
       )}
       {loggedModel.info?.source_run_id &&
         loggedModel.info?.experiment_id &&

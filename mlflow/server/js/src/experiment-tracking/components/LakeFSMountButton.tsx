@@ -1,18 +1,19 @@
 import { useEffect, useState } from 'react';
-import { Button, CheckCircleIcon, Tooltip, XCircleIcon } from '@databricks/design-system';
+import { Button, CheckCircleIcon, FolderBranchIcon, Tooltip } from '@databricks/design-system';
 import { copyToClipboard } from '../../common/utils/copyToClipboard';
 import { getLakeFSMountCommand } from '../utils/LakeFSUtils';
 
 /**
- * "Mount" button for a lakefs:// prefix — the MLflow equivalent of lakeFS's own
- * mount affordance. The full `everest mount` command lives in a tooltip (so the
- * button stays compact); clicking copies it to the clipboard. A leading
- * indicator shows ✗ until the command has been copied, then flips to ✓.
+ * Button for a lakefs:// prefix that lets a data scientist read and write this
+ * exact version as ordinary local files (no full download), via a read-write
+ * lakeFS/Everest mount. Clicking copies the `everest mount` command; the tooltip explains what
+ * it does and shows the command to run. `subject` tunes the wording for the
+ * thing being mounted (a dataset vs a model).
  *
  * Renders nothing when the URI is not a mountable prefix, so callers can drop it
  * in unconditionally next to any lakeFS source/location.
  */
-export const LakeFSMountButton = ({ uri }: { uri?: string }) => {
+export const LakeFSMountButton = ({ uri, subject = 'data' }: { uri?: string; subject?: 'data' | 'model' }) => {
   const [copied, setCopied] = useState(false);
   const command = getLakeFSMountCommand(uri);
 
@@ -33,15 +34,24 @@ export const LakeFSMountButton = ({ uri }: { uri?: string }) => {
       componentId="mlflow.lakefs.mount.tooltip"
       side="bottom"
       maxWidth={600}
-      content={<span css={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{command}</span>}
+      content={
+        <div>
+          <div>
+            Read and write this exact {subject} version as local files (no full download) by mounting it with lakeFS.
+            You can edit files locally and commit the changes back. Click to copy the command, then run it in your
+            terminal:
+          </div>
+          <div css={{ fontFamily: 'monospace', wordBreak: 'break-all', marginTop: 4 }}>{command}</div>
+        </div>
+      }
     >
       <Button
         componentId="mlflow.lakefs.mount.copy"
-        size="small"
-        icon={copied ? <CheckCircleIcon css={{ color: '#2e7d32' }} /> : <XCircleIcon />}
+        type="primary"
+        icon={copied ? <CheckCircleIcon css={{ color: '#2e7d32' }} /> : <FolderBranchIcon />}
         onClick={async () => setCopied(await copyToClipboard(command))}
       >
-        {copied ? 'Mount command copied' : 'Mount'}
+        {copied ? 'Command copied, run in terminal' : 'Mount as local files'}
       </Button>
     </Tooltip>
   );

@@ -43,15 +43,15 @@ export function isLakeFSPrefix(uri?: string): boolean {
 }
 
 /**
- * Builds the `everest mount` command for a lakefs:// prefix (the command shown
- * by lakeFS's own "Mount" button). Returns null if the URI is not a mountable
- * prefix. The path is normalized to end with "/" so Everest mounts the whole
- * directory.
+ * Builds the read-write `everest mount` command for a lakefs:// prefix. Returns
+ * null if the URI is not a mountable prefix. The path is normalized to end with
+ * "/" so Everest mounts the whole directory; --write-mode lets the user edit
+ * files locally and commit the changes back to lakeFS.
  */
 export function getLakeFSMountCommand(uri?: string): string | null {
   if (!uri || !isLakeFSPrefix(uri)) {
     return null;
   }
   const normalized = uri.endsWith('/') ? uri : `${uri}/`;
-  return `everest mount "${normalized}" <local-dir>`;
+  return `everest mount "${normalized}" <local-dir> --write-mode`;
 }
