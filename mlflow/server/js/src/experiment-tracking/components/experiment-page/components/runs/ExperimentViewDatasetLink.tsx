@@ -4,6 +4,7 @@ import { DatasetSourceTypes } from '../../../../types';
 import { FormattedMessage } from 'react-intl';
 import { getDatasetSourceUrl } from '../../../../utils/DatasetUtils';
 import { CopyButton } from '../../../../../shared/building_blocks/CopyButton';
+import { LakeFSMountButton } from '../../../LakeFSMountButton';
 
 export interface DatasetLinkProps {
   datasetWithTags: RunDatasetWithTags;
@@ -30,11 +31,44 @@ export function ExperimentViewDatasetLink({ datasetWithTags }: DatasetLinkProps)
     }
   }
 
+  if (dataset.sourceType === DatasetSourceTypes.LAKEFS) {
+    const url = getDatasetSourceUrl(datasetWithTags);
+    let lakefsUri: string | undefined;
+    try {
+      lakefsUri = JSON.parse(dataset.source).uri;
+    } catch {
+      lakefsUri = undefined;
+    }
+    return (
+      <div css={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+        {url && (
+          <Button
+            componentId="mlflow.experiment.dataset.lakefs.open"
+            icon={<TableIcon />}
+            type="primary"
+            onClick={() => {
+              const newWindow = window.open(url, '_blank', 'noopener,noreferrer');
+              if (newWindow) {
+                newWindow.opener = null;
+              }
+            }}
+          >
+            <FormattedMessage
+              defaultMessage="Open dataset"
+              description="Text for the button that opens the dataset source URL in a new tab"
+            />
+          </Button>
+        )}
+        {/* mountable only when the lakeFS source is a prefix (directory) */}
+        <LakeFSMountButton uri={lakefsUri} />
+      </div>
+    );
+  }
+
   if (
     dataset.sourceType === DatasetSourceTypes.HTTP ||
     dataset.sourceType === DatasetSourceTypes.EXTERNAL ||
-    dataset.sourceType === DatasetSourceTypes.HUGGING_FACE ||
-    dataset.sourceType === DatasetSourceTypes.LAKEFS
+    dataset.sourceType === DatasetSourceTypes.HUGGING_FACE
   ) {
     const url = getDatasetSourceUrl(datasetWithTags);
     if (url) {

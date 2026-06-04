@@ -25,3 +25,33 @@ export function getLakeFSBrowseUrl(uri?: string, endpoint?: string): string | nu
     ref,
   )}&path=${encodeURIComponent(path)}`;
 }
+
+/**
+ * True when the lakefs:// URI points at a prefix (directory) rather than a
+ * single object — only prefixes can be mounted. lakeFS itself uses an
+ * object-vs-prefix flag from its API; in the UI we approximate: a path that
+ * ends with "/" or whose final segment has no file extension is a prefix.
+ */
+export function isLakeFSPrefix(uri?: string): boolean {
+  const match = uri?.match(/^lakefs:\/\/([^/]+)\/([^/]+)\/(.*)$/);
+  if (!match) {
+    return false;
+  }
+  const path = match[3];
+  const lastSegment = path.replace(/\/$/, '').split('/').pop() ?? '';
+  return path === '' || path.endsWith('/') || !lastSegment.includes('.');
+}
+
+/**
+ * Builds the `everest mount` command for a lakefs:// prefix (the command shown
+ * by lakeFS's own "Mount" button). Returns null if the URI is not a mountable
+ * prefix. The path is normalized to end with "/" so Everest mounts the whole
+ * directory.
+ */
+export function getLakeFSMountCommand(uri?: string): string | null {
+  if (!uri || !isLakeFSPrefix(uri)) {
+    return null;
+  }
+  const normalized = uri.endsWith('/') ? uri : `${uri}/`;
+  return `everest mount "${normalized}" <local-dir>`;
+}

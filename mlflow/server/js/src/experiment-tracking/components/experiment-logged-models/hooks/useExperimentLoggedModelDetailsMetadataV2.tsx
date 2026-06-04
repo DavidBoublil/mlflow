@@ -13,6 +13,7 @@ import { ExperimentLoggedModelAllDatasetsList } from '../ExperimentLoggedModelAl
 import { ExperimentLoggedModelDetailsModelVersionsList } from '../ExperimentLoggedModelDetailsModelVersionsList';
 import { MLFLOW_LOGGED_MODEL_USER_TAG } from '../../../constants';
 import { getLakeFSBrowseUrl } from '../../../utils/LakeFSUtils';
+import { LakeFSMountButton } from '../../LakeFSMountButton';
 
 enum ExperimentLoggedModelDetailsMetadataSections {
   DETAILS = 'DETAILS',
@@ -78,14 +79,18 @@ export const useExperimentLoggedModelDetailsMetadataV2 = ({
           value={
             getLakeFSBrowseUrl(loggedModel.info.artifact_uri) ? (
               // lakefs:// artifact locations link out to the lakeFS object browser
-              <Typography.Link
-                componentId="mlflow.logged_models.details_metadata.lakefs_artifact_link"
-                openInNewTab
-                href={getLakeFSBrowseUrl(loggedModel.info.artifact_uri) ?? undefined}
-                css={{ wordBreak: 'break-all' }}
-              >
-                {loggedModel.info.artifact_uri}
-              </Typography.Link>
+              // and, being a directory, can be mounted with Everest
+              <div css={{ display: 'flex', flexDirection: 'column', gap: theme.spacing.xs, alignItems: 'flex-start' }}>
+                <Typography.Link
+                  componentId="mlflow.logged_models.details_metadata.lakefs_artifact_link"
+                  openInNewTab
+                  href={getLakeFSBrowseUrl(loggedModel.info.artifact_uri) ?? undefined}
+                  css={{ wordBreak: 'break-all' }}
+                >
+                  {loggedModel.info.artifact_uri}
+                </Typography.Link>
+                <LakeFSMountButton uri={loggedModel.info.artifact_uri} />
+              </div>
             ) : (
               <DetailsOverviewCopyableIdBox value={loggedModel.info.artifact_uri} />
             )
