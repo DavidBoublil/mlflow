@@ -24,6 +24,23 @@ export function getLakeFSBrowseUrl(uri?: string, endpoint?: string): string | nu
 }
 
 /**
+ * Builds a lakeFS web UI single-object viewer URL from a lakefs:// URI. The
+ * viewer route (`/object`) renders the object's contents and the DuckDB query
+ * panel for tabular files, unlike the directory browser (`/objects`). Returns
+ * null if the URI is not a valid lakefs:// URI.
+ */
+export function getLakeFSObjectViewerUrl(uri?: string, endpoint?: string): string | null {
+  const match = uri?.match(/^lakefs:\/\/([^/]+)\/([^/]+)\/(.*)$/);
+  if (!match) {
+    return null;
+  }
+  const [, repo, ref, path] = match;
+  return `${endpoint ?? DEFAULT_LAKEFS_ENDPOINT}/repositories/${repo}/object?ref=${encodeURIComponent(
+    ref,
+  )}&path=${encodeURIComponent(path)}`;
+}
+
+/**
  * True when the lakefs:// URI points at a prefix (directory) rather than a
  * single object — only prefixes can be mounted. lakeFS itself uses an
  * object-vs-prefix flag from its API; in the UI we approximate: a path that

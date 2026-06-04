@@ -3,7 +3,7 @@ import { useSelector } from 'react-redux';
 import { Alert, Button, Input, Spinner, Typography, useDesignSystemTheme } from '@databricks/design-system';
 import { CollapsibleSection } from '../../common/components/CollapsibleSection';
 import { DatasetSourceTypes } from '../types';
-import { getLakeFSBrowseUrl } from '../utils/LakeFSUtils';
+import { getLakeFSBrowseUrl, getLakeFSObjectViewerUrl } from '../utils/LakeFSUtils';
 
 /**
  * Compare-runs widget: when both compared runs have lakeFS dataset sources in
@@ -400,7 +400,10 @@ const DiffEntryRow = ({
   const displayName = entry.path.slice(rootPrefix.length) || entry.path;
   // removed objects only exist on the base ref; everything else on the compared ref
   const browseRef = entry.type === 'removed' ? baseRef : comparedRef;
-  const browseUrl = getLakeFSBrowseUrl(`lakefs://${repo}/${browseRef}/${entry.path}`);
+  // files open the single-object viewer (with the DuckDB query); prefixes open the directory browser
+  const browseUrl = isPrefix
+    ? getLakeFSBrowseUrl(`lakefs://${repo}/${browseRef}/${entry.path}`)
+    : getLakeFSObjectViewerUrl(`lakefs://${repo}/${browseRef}/${entry.path}`);
 
   return (
     <>
