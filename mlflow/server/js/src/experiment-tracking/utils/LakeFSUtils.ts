@@ -9,10 +9,7 @@
 export const DEFAULT_LAKEFS_ENDPOINT = 'http://localhost:8000';
 
 /**
- * Builds a lakeFS web UI single-object viewer URL from a lakefs:// URI.
- *
- * The viewer route (`/object`) renders an object's contents and the DuckDB
- * query panel for tabular files, unlike the directory browser (`/objects`).
+ * Builds a lakeFS web UI object-browser URL from a lakefs:// URI.
  * Returns null if the URI is not a valid lakefs:// URI.
  */
 export function getLakeFSBrowseUrl(uri?: string, endpoint?: string): string | null {
@@ -21,7 +18,7 @@ export function getLakeFSBrowseUrl(uri?: string, endpoint?: string): string | nu
     return null;
   }
   const [, repo, ref, path] = match;
-  return `${endpoint ?? DEFAULT_LAKEFS_ENDPOINT}/repositories/${repo}/object?ref=${encodeURIComponent(
+  return `${endpoint ?? DEFAULT_LAKEFS_ENDPOINT}/repositories/${repo}/objects?ref=${encodeURIComponent(
     ref,
   )}&path=${encodeURIComponent(path)}`;
 }
