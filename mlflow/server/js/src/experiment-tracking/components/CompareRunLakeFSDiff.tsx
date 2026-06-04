@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
-import { Alert, Button, Input, Spinner, Typography, useDesignSystemTheme } from '@databricks/design-system';
+import {
+  Alert,
+  Button,
+  DatabaseIcon,
+  Input,
+  Spinner,
+  TableIcon,
+  Typography,
+  VisibleIcon,
+  useDesignSystemTheme,
+} from '@databricks/design-system';
 import { CollapsibleSection } from '../../common/components/CollapsibleSection';
 import { DatasetSourceTypes } from '../types';
 import { getLakeFSBrowseUrl } from '../utils/LakeFSUtils';
@@ -115,6 +125,55 @@ const formatBytes = (bytes?: number): string => {
     return `${bytes} B`;
   }
   return bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+// --- lakeFS-managed Iceberg tables (the ChangesTree / diffTableChanges port) ---
+//
+// lakeFS stores each managed table as one versioned pointer at
+// _lakefs_tables/iceberg/namespaces/<ns…>/tables/<name>/metadata.json, and that
+// pointer file IS the full Iceberg table metadata. So a diff entry on that path
+// already maps 1:1 to a table change — added/removed/changed = created/dropped/
+// modified — and the file content gives snapshot/row/schema detail.
+
+interface IcebergTableRef {
+  namespace: string[];
+  name: string;
+  kind: 'table' | 'view';
+}
+
+const LAKEFS_TABLE_RE = /_lakefs_tables\/iceberg\/namespaces\/(.+)\/(tables|views)\/([^/]+)\/metadata\.json$/;
+
+const parseLakeFSTablePointer = (path: string): IcebergTableRef | null => {
+  const m = path.match(LAKEFS_TABLE_RE);
+  if (!m) {
+    return null;
+  }
+  return { namespace: m[1].split('/'), name: m[3], kind: m[2] === 'views' ? 'view' : 'table' };
+};
+
+interface IcebergMeta {
+  snapshotId?: number;
+  rows?: number;
+  addedRecords?: number;
+  deletedRecords?: number;
+  fields: { name: string; type: string }[];
+}
+
+const parseIcebergMeta = (text: string): IcebergMeta => {
+  const meta = JSON.parse(text);
+  const currentSnapshotId = meta['current-snapshot-id'];
+  const snapshots: any[] = meta['snapshots'] ?? [];
+  const current = snapshots.find((s) => s['snapshot-id'] === currentSnapshotId);
+  const summary = current?.summary ?? {};
+  const schema = (meta['schemas'] ?? []).find((s: any) => s['schema-id'] === meta['current-schema-id']);
+  const num = (v: any) => (v == null ? undefined : Number(v));
+  return {
+    snapshotId: currentSnapshotId,
+    rows: num(summary['total-records']),
+    addedRecords: num(summary['added-records']),
+    deletedRecords: num(summary['deleted-records']),
+    fields: (schema?.fields ?? []).map((f: any) => ({ name: f.name, type: String(f.type) })),
+  };
 };
 
 // --- line diff (LCS), rendered as unified hunks like lakeFS's text diff ---
@@ -623,6 +682,322 @@ const DiffEntryList = ({
   );
 };
 
+// --- Iceberg table change detail (parsed from the two metadata.json pointers) ---
+
+const IcebergTableDetail = ({
+  repo,
+  baseRef,
+  comparedRef,
+  table,
+  changeType,
+  creds,
+  onAuthError,
+}: {
+  repo: string;
+  baseRef: string;
+  comparedRef: string;
+  table: { ref: IcebergTableRef; path: string };
+  changeType: string;
+  creds: Creds;
+  onAuthError: () => void;
+}) => {
+  const { theme } = useDesignSystemTheme();
+  const [detail, setDetail] = useState<{ base?: IcebergMeta; compared?: IcebergMeta } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchMeta = async (ref: string) => {
+      const res = await lakeFSRequest(
+        creds,
+        `/repositories/${encodeURIComponent(repo)}/refs/${encodeURIComponent(ref)}/objects`,
+        { path: table.path },
+        false,
+      );
+      return parseIcebergMeta(await res.text());
+    };
+    (async () => {
+      try {
+        const [base, compared] = await Promise.all([
+          changeType !== 'added' ? fetchMeta(baseRef) : Promise.resolve(undefined),
+          changeType !== 'removed' ? fetchMeta(comparedRef) : Promise.resolve(undefined),
+        ]);
+        if (!cancelled) {
+          setDetail({ base, compared });
+        }
+      } catch (e: any) {
+        if (e instanceof LakeFSAuthError) {
+          onAuthError();
+          return;
+        }
+        if (!cancelled) {
+          setError(e.message ?? String(e));
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repo, baseRef, comparedRef, table.path, changeType, creds]);
+
+  if (loading) {
+    return <Spinner size="small" />;
+  }
+  if (error) {
+    return <Typography.Hint>{error}</Typography.Hint>;
+  }
+
+  const { base, compared } = detail ?? {};
+  const snapshotLine = () => {
+    if (base && compared) {
+      return `snapshot ${String(base.snapshotId).slice(0, 8)}… → ${String(compared.snapshotId).slice(0, 8)}…`;
+    }
+    const only = compared ?? base;
+    return `snapshot ${String(only?.snapshotId).slice(0, 8)}…`;
+  };
+  const rowLine = () => {
+    if (base && compared) {
+      const delta = (compared.rows ?? 0) - (base.rows ?? 0);
+      const sign = delta > 0 ? `+${delta}` : `${delta}`;
+      const parts = [`rows ${base.rows} → ${compared.rows} (${sign})`];
+      if (compared.deletedRecords) {
+        parts.push(`${compared.deletedRecords} deleted`);
+      }
+      return parts.join(', ');
+    }
+    const only = compared ?? base;
+    return `rows: ${only?.rows ?? '?'}`;
+  };
+  const schemaLine = () => {
+    if (!base || !compared) {
+      return null;
+    }
+    const baseNames = new Set(base.fields.map((f) => f.name));
+    const compNames = new Set(compared.fields.map((f) => f.name));
+    const added = compared.fields.filter((f) => !baseNames.has(f.name)).map((f) => `+${f.name}:${f.type}`);
+    const removed = base.fields.filter((f) => !compNames.has(f.name)).map((f) => `−${f.name}`);
+    const changes = [...added, ...removed];
+    return changes.length ? `schema: ${changes.join(', ')}` : 'schema: unchanged';
+  };
+
+  const lines = [snapshotLine(), rowLine(), schemaLine()].filter(Boolean) as string[];
+  return (
+    <div
+      css={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 2,
+        fontFamily: 'monospace',
+        fontSize: theme.typography.fontSizeSm,
+        color: theme.colors.textSecondary,
+        padding: `${theme.spacing.xs}px ${theme.spacing.sm}px`,
+      }}
+    >
+      {lines.map((l) => (
+        <span key={l}>{l}</span>
+      ))}
+    </div>
+  );
+};
+
+// --- Iceberg tables diff (lakeFS useTablesDiff / TreePanel port) ---
+
+const IcebergTableDiff = ({
+  repo,
+  baseRef,
+  comparedRef,
+  prefix,
+  creds,
+  onAuthError,
+}: {
+  repo: string;
+  baseRef: string;
+  comparedRef: string;
+  prefix: string;
+  creds: Creds;
+  onAuthError: () => void;
+}) => {
+  const { theme } = useDesignSystemTheme();
+  const [tables, setTables] = useState<{ ref: IcebergTableRef; path: string; type: string }[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
+  const load = useCallback(async () => {
+    setError(null);
+    setTables(null);
+    try {
+      // flat listing: every changed table pointer under the prefix, in one shot
+      const found: { ref: IcebergTableRef; path: string; type: string }[] = [];
+      let after = '';
+      do {
+        const res = await lakeFSRequest(
+          creds,
+          `/repositories/${encodeURIComponent(repo)}/refs/${encodeURIComponent(baseRef)}/diff/${encodeURIComponent(
+            comparedRef,
+          )}`,
+          { prefix, amount: String(PAGE_SIZE), after },
+        );
+        const data = await res.json();
+        for (const entry of data.results ?? []) {
+          const ref = parseLakeFSTablePointer(entry.path);
+          if (ref) {
+            found.push({ ref, path: entry.path, type: entry.type });
+          }
+        }
+        after = data.pagination?.has_more ? data.pagination.next_offset : '';
+      } while (after);
+      setTables(found);
+    } catch (e: any) {
+      if (e instanceof LakeFSAuthError) {
+        onAuthError();
+        return;
+      }
+      setError(e.message ?? String(e));
+    }
+  }, [repo, baseRef, comparedRef, prefix, creds, onAuthError]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (error) {
+    return (
+      <Alert
+        componentId="mlflow.compare-runs.lakefs-diff.iceberg-error"
+        closable={false}
+        type="error"
+        message={error}
+        action={
+          <Button componentId="mlflow.compare-runs.lakefs-diff.iceberg-retry" onClick={load}>
+            Retry
+          </Button>
+        }
+      />
+    );
+  }
+  // self-hide while loading or when there are no managed-table changes — the
+  // Objects panel is always shown alongside, mirroring lakeFS's two-panel layout
+  if (tables === null || tables.length === 0) {
+    return null;
+  }
+
+  // group the flat table changes into a namespace tree, like lakeFS's Tables view
+  type LeafNode = { node: 'table'; ref: IcebergTableRef; path: string; type: string };
+  type NsNode = { node: 'namespace'; name: string; key: string; children: TreeNode[] };
+  type TreeNode = NsNode | LeafNode;
+  const buildTree = (changes: typeof tables): TreeNode[] => {
+    const roots: TreeNode[] = [];
+    for (const c of changes) {
+      let level = roots;
+      let key = '';
+      for (const nsPart of c.ref.namespace) {
+        key = key ? `${key}/${nsPart}` : nsPart;
+        let ns = level.find((n): n is NsNode => n.node === 'namespace' && n.name === nsPart);
+        if (!ns) {
+          ns = { node: 'namespace', name: nsPart, key, children: [] };
+          level.push(ns);
+        }
+        level = ns.children;
+      }
+      level.push({ node: 'table', ref: c.ref, path: c.path, type: c.type });
+    }
+    return roots;
+  };
+
+  const CHANGE_LABEL: Record<string, string> = { added: 'Added', removed: 'Removed', changed: 'Modified' };
+  const ROW = (depth: number) => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing.xs,
+    padding: `2px ${theme.spacing.sm}px`,
+    paddingLeft: theme.spacing.sm + depth * theme.spacing.lg,
+    fontFamily: 'monospace',
+    fontSize: theme.typography.fontSizeSm,
+    '&:hover': { background: theme.colors.actionDefaultBackgroundHover },
+  });
+
+  const renderNode = (n: TreeNode, depth: number): React.ReactNode => {
+    if (n.node === 'namespace') {
+      const open = expanded[`ns:${n.key}`] ?? true; // namespaces start expanded
+      return (
+        <div key={`ns:${n.key}`}>
+          <div css={ROW(depth)}>
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={() => setExpanded((p) => ({ ...p, [`ns:${n.key}`]: !open }))}
+              onKeyDown={(e) => e.key === 'Enter' && setExpanded((p) => ({ ...p, [`ns:${n.key}`]: !open }))}
+              css={{ cursor: 'pointer', width: 14, flexShrink: 0, color: theme.colors.textSecondary, userSelect: 'none' }}
+            >
+              {open ? '▾' : '▸'}
+            </span>
+            <DatabaseIcon css={{ color: theme.colors.textSecondary }} />
+            <span>{n.name}</span>
+          </div>
+          {open && n.children.map((c) => renderNode(c, depth + 1))}
+        </div>
+      );
+    }
+    // leaf: a table or view change
+    const style = DIFF_TYPE_STYLES[n.type] ?? DIFF_TYPE_STYLES['changed'];
+    const open = expanded[n.path];
+    const KindIcon = n.ref.kind === 'view' ? VisibleIcon : TableIcon;
+    return (
+      <div key={n.path}>
+        <div css={ROW(depth)}>
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={() => setExpanded((p) => ({ ...p, [n.path]: !p[n.path] }))}
+            onKeyDown={(e) => e.key === 'Enter' && setExpanded((p) => ({ ...p, [n.path]: !p[n.path] }))}
+            css={{ cursor: 'pointer', width: 14, flexShrink: 0, color: theme.colors.textSecondary, userSelect: 'none' }}
+          >
+            {open ? '▾' : '▸'}
+          </span>
+          <KindIcon css={{ color: style.color }} />
+          <span css={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{n.ref.name}</span>
+          <span css={{ color: style.color, fontWeight: 600, whiteSpace: 'nowrap' }}>{CHANGE_LABEL[n.type] ?? n.type}</span>
+        </div>
+        {open && (
+          <div css={{ paddingLeft: theme.spacing.sm + (depth + 1) * theme.spacing.lg }}>
+            <IcebergTableDetail
+              repo={repo}
+              baseRef={baseRef}
+              comparedRef={comparedRef}
+              table={{ ref: n.ref, path: n.path }}
+              changeType={n.type}
+              creds={creds}
+              onAuthError={onAuthError}
+            />
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div css={{ border: `1px solid ${theme.colors.border}`, borderRadius: theme.borders.borderRadiusSm }}>
+      <div
+        css={{
+          padding: `${theme.spacing.xs}px ${theme.spacing.sm}px`,
+          fontWeight: 600,
+          color: theme.colors.textSecondary,
+          borderBottom: `1px solid ${theme.colors.border}`,
+        }}
+      >
+        Tables ({tables.length})
+      </div>
+      {buildTree(tables).map((n) => renderNode(n, 0))}
+    </div>
+  );
+};
+
 // --- top-level widget ---
 
 export const CompareRunLakeFSDiff = ({ runUuids, runNames }: { runUuids: string[]; runNames?: string[] }) => {
@@ -811,7 +1186,19 @@ export const CompareRunLakeFSDiff = ({ runUuids, runNames }: { runUuids: string[
             Forget lakeFS credentials
           </Button>
         </div>
+        {/* Like lakeFS: the Objects file-diff panel always, then a semantic Tables
+            panel below it (only when there are managed-table changes; self-hides). */}
         <div css={{ border: `1px solid ${theme.colors.border}`, borderRadius: theme.borders.borderRadiusSm }}>
+          <div
+            css={{
+              padding: `${theme.spacing.xs}px ${theme.spacing.sm}px`,
+              fontWeight: 600,
+              color: theme.colors.textSecondary,
+              borderBottom: `1px solid ${theme.colors.border}`,
+            }}
+          >
+            Objects
+          </div>
           <DiffEntryList
             repo={ordered.base.repo}
             baseRef={ordered.base.ref}
@@ -823,6 +1210,16 @@ export const CompareRunLakeFSDiff = ({ runUuids, runNames }: { runUuids: string[
             onAuthError={onAuthError}
           />
         </div>
+        <IcebergTableDiff
+          repo={ordered.base.repo}
+          baseRef={ordered.base.ref}
+          comparedRef={ordered.compared.ref}
+          // the Tables panel always inspects the lakeFS catalog area; scope to
+          // the source's namespace when the source already points inside it
+          prefix={prefix.includes('_lakefs_tables/') ? prefix : '_lakefs_tables/'}
+          creds={creds}
+          onAuthError={onAuthError}
+        />
       </div>
     );
   };
