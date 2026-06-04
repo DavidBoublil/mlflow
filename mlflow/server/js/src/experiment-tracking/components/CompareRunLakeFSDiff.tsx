@@ -609,6 +609,17 @@ export const CompareRunLakeFSDiff = ({ runUuids, runNames }: { runUuids: string[
     setAuthError('lakeFS rejected the credentials — please re-enter them.');
   }, []);
 
+  // Demo affordance: drop stored credentials and return to the login widget.
+  const forgetCreds = useCallback(() => {
+    localStorage.removeItem(CREDS_STORAGE_KEY);
+    setCreds(null);
+    setOrdered(null);
+    setOrderError(null);
+    setAuthError(null);
+    setKeyInput('');
+    setSecretInput('');
+  }, []);
+
   // The refs-diff API is directional: it reports changes on the RIGHT ref
   // relative to the base, so diffing newer->older comes back empty. Order
   // the refs by commit time (older = base) regardless of selection order.
@@ -747,6 +758,11 @@ export const CompareRunLakeFSDiff = ({ runUuids, runNames }: { runUuids: string[
     }
     return (
       <div css={{ display: 'flex', flexDirection: 'column', gap: theme.spacing.xs }}>
+        <div css={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Button componentId="mlflow.compare-runs.lakefs-diff.forget-creds" size="small" onClick={forgetCreds}>
+            Forget lakeFS credentials
+          </Button>
+        </div>
         <div css={{ border: `1px solid ${theme.colors.border}`, borderRadius: theme.borders.borderRadiusSm }}>
           <DiffEntryList
             repo={ordered.base.repo}
