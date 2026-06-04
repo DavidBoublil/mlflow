@@ -24,6 +24,7 @@ const PAGE_SIZE = 100;
 // Same content-diff cap as the lakeFS UI
 const MAX_CONTENT_DIFF_BYTES = 120 * 1024;
 const TEXT_EXTENSIONS = ['csv', 'tsv', 'txt', 'json', 'jsonl', 'yaml', 'yml', 'md', 'py', 'sql', 'log', 'xml', 'html'];
+const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'];
 
 interface LakeFSCoords {
   repo: string;
@@ -205,29 +206,29 @@ const ObjectContentDiff = ({
   onAuthError: () => void;
 }) => {
   const { theme } = useDesignSystemTheme();
+  const ext = entry.path.split('.').pop()?.toLowerCase() ?? '';
+  const isImage = IMAGE_EXTENSIONS.includes(ext);
   const [lines, setLines] = useState<Array<DiffLine | { kind: 'gap'; text: string }> | null>(null);
+  const [images, setImages] = useState<{ base: string | null; compared: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const needsBase = entry.type !== 'added';
+  const needsCompared = entry.type !== 'removed';
+
   useEffect(() => {
     let cancelled = false;
+    const objectUrls: string[] = [];
     (async () => {
       try {
-        const ext = entry.path.split('.').pop()?.toLowerCase() ?? '';
-        if (!TEXT_EXTENSIONS.includes(ext)) {
-          throw new Error('Content diff is only available for text files.');
+        if (!TEXT_EXTENSIONS.includes(ext) && !isImage) {
+          throw new Error('Content diff is only available for text and image files.');
         }
         const objectPath = (ref: string) => `/repositories/${encodeURIComponent(repo)}/refs/${encodeURIComponent(ref)}/objects`;
         const statOne = async (ref: string) => {
           const res = await lakeFSRequest(creds, `${objectPath(ref)}/stat`, { path: entry.path });
           return res.json();
         };
-        const getOne = async (ref: string) => {
-          const res = await lakeFSRequest(creds, objectPath(ref), { path: entry.path }, false);
-          return res.text();
-        };
-        const needsBase = entry.type !== 'added';
-        const needsCompared = entry.type !== 'removed';
         const stats = await Promise.all([
           needsBase ? statOne(baseRef) : null,
           needsCompared ? statOne(comparedRef) : null,
@@ -235,18 +236,35 @@ const ObjectContentDiff = ({
         if (stats.some((s) => s && s.size_bytes > MAX_CONTENT_DIFF_BYTES)) {
           throw new Error(`File too large for content diff (limit ${formatBytes(MAX_CONTENT_DIFF_BYTES)}).`);
         }
-        const [baseText, comparedText] = await Promise.all([
-          needsBase ? getOne(baseRef) : Promise.resolve(''),
-          needsCompared ? getOne(comparedRef) : Promise.resolve(''),
-        ]);
-        if (cancelled) {
-          return;
+
+        if (isImage) {
+          // render the object(s) directly, like lakeFS's ImageCardDiff
+          const getUrl = async (ref: string) => {
+            const res = await lakeFSRequest(creds, objectPath(ref), { path: entry.path }, false);
+            const url = URL.createObjectURL(await res.blob());
+            objectUrls.push(url);
+            return url;
+          };
+          const [base, compared] = await Promise.all([
+            needsBase ? getUrl(baseRef) : Promise.resolve(null),
+            needsCompared ? getUrl(comparedRef) : Promise.resolve(null),
+          ]);
+          if (!cancelled) {
+            setImages({ base, compared });
+          }
+        } else {
+          const getText = async (ref: string) => {
+            const res = await lakeFSRequest(creds, objectPath(ref), { path: entry.path }, false);
+            return res.text();
+          };
+          const [baseText, comparedText] = await Promise.all([
+            needsBase ? getText(baseRef) : Promise.resolve(''),
+            needsCompared ? getText(comparedRef) : Promise.resolve(''),
+          ]);
+          if (!cancelled) {
+            setLines(toHunks(diffLines(baseText ? baseText.split('\n') : [], comparedText ? comparedText.split('\n') : [])));
+          }
         }
-        const diffed = diffLines(
-          baseText ? baseText.split('\n') : [],
-          comparedText ? comparedText.split('\n') : [],
-        );
-        setLines(toHunks(diffed));
       } catch (e: any) {
         if (e instanceof LakeFSAuthError) {
           onAuthError();
@@ -263,6 +281,7 @@ const ObjectContentDiff = ({
     })();
     return () => {
       cancelled = true;
+      objectUrls.forEach((url) => URL.revokeObjectURL(url));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repo, baseRef, comparedRef, entry.path, entry.type, creds]);
@@ -272,6 +291,35 @@ const ObjectContentDiff = ({
   }
   if (error) {
     return <Typography.Hint>{error}</Typography.Hint>;
+  }
+  if (isImage) {
+    const imgCard = (label: string, url: string | null, tint: string) => (
+      <div css={{ flex: 1, minWidth: 0 }}>
+        <Typography.Hint css={{ color: tint }}>{label}</Typography.Hint>
+        {url ? (
+          <img
+            src={url}
+            alt={`${label} ${entry.path}`}
+            css={{
+              display: 'block',
+              maxWidth: '100%',
+              maxHeight: 320,
+              border: `1px solid ${theme.colors.border}`,
+              borderRadius: theme.borders.borderRadiusSm,
+              background: theme.colors.backgroundSecondary,
+            }}
+          />
+        ) : (
+          <Typography.Hint>—</Typography.Hint>
+        )}
+      </div>
+    );
+    return (
+      <div css={{ display: 'flex', gap: theme.spacing.md, margin: `${theme.spacing.xs}px 0`, flexWrap: 'wrap' }}>
+        {needsBase && imgCard('Before', images?.base ?? null, DIFF_TYPE_STYLES['removed'].color)}
+        {needsCompared && imgCard('After', images?.compared ?? null, DIFF_TYPE_STYLES['added'].color)}
+      </div>
+    );
   }
   return (
     <div
